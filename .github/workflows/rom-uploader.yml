@@ -1,0 +1,80 @@
+name: Rom Uploader
+
+on:
+  workflow_dispatch:
+    inputs:
+      download_link:
+        description: 'Download Link'
+        required: true
+        default: 'Your build download link'
+
+env:
+  CHAT_ID: ${{ secrets.CHAT_ID }}
+  BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+  SERVER_ADDRESS: ${{ secrets.SERVER_ADDRESS }}
+  SERVER_PATH: ${{ secrets.SERVER_PATH }}
+  SERVER_LINK: ${{ secrets.SERVER_LINK }}
+  SERVER_PASSWORD: ${{ secrets.SERVER_PASSWORD }}
+  DOWNLOAD_LINK: ${{ github.event.inputs.download_link }}
+
+jobs:
+  Rom_Upload:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Clone Repository
+      uses: actions/checkout@v2
+
+    - name: Install Dependencies
+      run: |
+        sudo apt-get install -y expect
+
+    - name: Download Build
+      run: |
+        if [[ ${DOWNLOAD_LINK} == *"drive.google.com"* ]]; then
+        pip install gdown
+        if [[ ${DOWNLOAD_LINK} == *"file"* ]]; then
+        DOWNLOAD_LINK=$(echo ${DOWNLOAD_LINK} | cut -d / -f 6)
+        elif [[ $DOWNLOAD_LINK == *"id"* ]]; then
+        DOWNLOAD_LINK1=$(echo ${DOWNLOAD_LINK} | cut -d = -f 2 | cut -d '&' -f 1)
+        DOWNLOAD_LINK2=$(echo ${DOWNLOAD_LINK} | cut -d = -f 4)
+        fi
+        gdown https://drive.google.com/uc?id=${DOWNLOAD_LINK1} || gdown https://drive.google.com/uc?id=${DOWNLOAD_LINK2}
+        else
+        aria2c -c -m0 -x16 -s50 ${DOWNLOAD_LINK}
+        fi
+
+    - name: Upload to Download Server
+      run: |
+        expect -c '
+        spawn sftp $::env(SERVER_ADDRESS)
+        expect \"yes/no\"
+        send "yes\r"
+        expect \"Password\"       
+        send "$::env(SERVER_PASSWORD)\r"
+        expect \"sftp> \"
+        send "cd $::env(SERVER_PATH)/\r"
+        set timeout -1
+        send "put *.zip\r"
+        expect "Uploading"
+        expect "*100%*"
+        expect "sftp*"
+        send "bye\r"
+        interact
+        '
+
+    - name: Notify in Telegram
+      run: |
+        FILE=$(find $(pwd)/ -maxdepth 1 -name "*.zip" | perl -e 'print sort { length($b) <=> length($a) } <>' | head -n 1)
+        FILE_NAME=$(basename ${FILE})
+        FILE_SIZE=$(du -sh ${FILE} |  awk '{print $1}')
+        function notifyTG() {
+            curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" -d chat_id="${CHAT_ID}" \
+            -d "parse_mode=Markdown" \
+            -d text="${*}"
+        }
+        notifyTG """
+        *Build Uploaded To Download Server!*
+        
+        *Rom:* \`${FILE_NAME}\`
+        *Size:* \`${FILE_SIZE}\`
+        *Download Link:* [Here](${SERVER_LINK}/${FILE_NAME})""" &> /dev/null
