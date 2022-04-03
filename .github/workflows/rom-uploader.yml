@@ -1,0 +1,84 @@
+name: Rom Uploader
+
+on:
+  workflow_dispatch:
+    inputs:
+      device_codename:
+        description: 'Device Codename'
+        required: true
+        default: 'Your device codename'
+      download_link:
+        description: 'Download Link'
+        required: true
+        default: 'Your build download link'
+
+env:
+  CHAT_ID: ${{ secrets.CHAT_ID }}
+  BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+  SERVER_ADDRESS: ${{ secrets.SERVER_ADDRESS }}
+  SERVER_PATH: ${{ secrets.SERVER_PATH }}
+  SERVER_LINK: ${{ secrets.SERVER_LINK }}
+  SERVER_PASSWORD: ${{ secrets.SERVER_PASSWORD }}
+  DEVICE: ${{ github.event.inputs.device_codename }}
+  DOWNLOAD_LINK: ${{ github.event.inputs.download_link }}
+
+jobs:
+  Rom_Upload:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Clone Repository
+      uses: actions/checkout@v2
+
+    - name: Install Dependencies
+      run: |
+        sudo apt-get install -y expect
+        pip3 install gdown
+    
+    - name: Download Build
+      run: |
+        echo "Download Link: ${DOWNLOAD_LINK}"
+        if [[ ${DOWNLOAD_LINK} == *"drive.google.com"* ]]; then
+        if [[ ${DOWNLOAD_LINK} == *"file"* ]]; then
+        DOWNLOAD_LINK=$(echo ${DOWNLOAD_LINK} | cut -d / -f 6)
+        elif [[ $DOWNLOAD_LINK == *"id"* ]]; then
+        DOWNLOAD_LINK1=$(echo ${DOWNLOAD_LINK} | cut -d = -f 2 | cut -d '&' -f 1)
+        DOWNLOAD_LINK2=$(echo ${DOWNLOAD_LINK} | cut -d = -f 4)
+        fi
+        gdown https://drive.google.com/uc?id=${DOWNLOAD_LINK1} || gdown https://drive.google.com/uc?id=${DOWNLOAD_LINK2}
+        else
+        aria2c -c -m0 -x16 -s50 ${DOWNLOAD_LINK}
+        fi
+
+    - name: Get File Name and Size
+      run: |
+        FILE=$(find $(pwd)/ -maxdepth 1 -name "*${DEVICE}*.zip" | perl -e 'print sort { length($b) <=> length($a) } <>' | head -n 1)
+        echo "FILE_NAME=$(basename ${FILE})" >> $GITHUB_ENV
+        echo "FILE_SIZE=$(du -sh ${FILE} |  awk '{print $1}')" >> $GITHUB_ENV
+
+    - name: Upload to Download Server
+      run: |
+        expect -c '
+        spawn rsync $::env(FILE_NAME) -aP --progress -r $::env(SERVER_ADDRESS):$::env(SERVER_PATH)/$::env(DEVICE)/
+        expect \"yes/no\"
+        send "yes\r"
+        expect \"password:\"
+        send "$::env(SERVER_PASSWORD)\r"
+        set timeout -1
+        expect "sending"
+        expect "*100%*"
+        interact
+        '
+
+    - name: Notify in Telegram
+      run: |
+        function notifyTG() {
+            curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" -d chat_id="${CHAT_ID}" \
+            -d "parse_mode=Markdown" \
+            -d text="${*}"
+        }
+        notifyTG """
+        *Build Uploaded to SourceForge!*
+        
+        *Rom:* \`${FILE_NAME}\`
+        *Size:* \`${FILE_SIZE}\`
+        *Download Link:* [Here](${SERVER_LINK}/${DEVICE}/${FILE_NAME})""" &> /dev/null
