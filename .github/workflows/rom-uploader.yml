@@ -66,4 +66,4 @@ jobs:
         
         *Rom:* \`${FILE_NAME}\`
         *Size:* \`${FILE_SIZE}\`
-        *Download Link:* [Here](${SERVER_LINK}/${DEVICE}/${FILE_NAME})""" &> /dev/null
+        *Download Link:* [Here](${SERVER_LINK}/${FILE_NAME})""" &> /dev/null
