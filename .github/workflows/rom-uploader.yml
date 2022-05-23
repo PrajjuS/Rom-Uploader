@@ -49,7 +49,7 @@ jobs:
         fi
 
     - name: Upload to Download Server
-      run: sshpass -p ${SERVER_PASSWORD} rsync -aPe "ssh -o StrictHostKeyChecking=no" *${DEVICE}*.zip --progress -r ${SERVER_ADDRESS}:${SERVER_PATH}/${DEVICE}/
+      run: sshpass -p ${SERVER_PASSWORD} rsync -aPe "ssh -o StrictHostKeyChecking=no" *${DEVICE}*.zip --progress -r ${SERVER_ADDRESS}:${SERVER_PATH}/
 
     - name: Notify in Telegram
       run: |
